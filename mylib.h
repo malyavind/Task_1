@@ -89,6 +89,5 @@ MYSQL_RES *Find_users_groups(MYSQL *mysql, char *from);
 MYSQL_RES *Get_users_fromgroup(MYSQL *mysql, char *togroup);
 
 
-//#include "mylib.c"
 
 #endif	
