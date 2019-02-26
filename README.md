@@ -11,7 +11,7 @@
 
 Сервер  запускается из командной строки с параметрами запуска.
 
-./srv <Interface> <loglvl> <users_per_thread> <opt.txt>
+./srv <IP> <loglvl> <users_per_thread> <opt.txt>
   
 interface - адрес сетевого интерфейса сервера (поддержка IPv6 не реализована).
 
