@@ -11,7 +11,7 @@
 
 Сервер  запускается из командной строки с параметрами запуска.
 
-./srv <serverIP> <loglvl> <users_per_thread> <opt.txt>
+./srv interface loglvl users_per_thread opt.txt
   
 interface - адрес сетевого интерфейса сервера (поддержка IPv6 не реализована).
 
@@ -27,7 +27,7 @@ opt.txt - файл с настройками для работы сервера 
 
 Клиент запускается из командной строки следующим образом:
 
-./cli <serverIP> <username>
+./cli serverIP username
  
 serverIP - IP aдрес сервера.
 
