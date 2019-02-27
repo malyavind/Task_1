@@ -6,7 +6,6 @@ int main(int argc, char *argv[]) {
 	
 	data_type data;
 	pthread_t tid;
-	//pthread_mutex_init(&mutex, NULL);
 	char ip[16];
 	char loglvl[2];
 	if (argc < 4 || argc > 5){
