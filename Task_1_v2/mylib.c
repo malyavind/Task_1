@@ -376,13 +376,19 @@ void hdl1(int signum) {
 	char sql[MSG_LEN + MAX_SQL_QUERY_LEN];
 	MYSQL_RES *res;
 	MYSQL_ROW row;
-	if (sigemptyset(&set))
-		return;
+	if (sigemptyset(&set)) {
+		syslog(LOG_ERR,"sigemptyset error from SIGUSR2\n");
+		exit(1);
+	}
 	
-	if (sigaddset(&set,SIGUSR1))
-		return;
-	if (sigprocmask(SIG_BLOCK, &set, NULL)) 
-      	return;   
+	if (sigaddset(&set,SIGUSR1)) {
+		syslog(LOG_ERR,"sigaddset error from SIGUSR2\n");
+		exit(1);
+	}
+	if (sigprocmask(SIG_BLOCK, &set, NULL)) {
+		syslog(LOG_ERR,"sigprocmask error from SIGUSR2\n");
+		exit(1);
+	} 
 	snprintf(sql, sizeof(sql), "SELECT m.message_id, m.message, \
 			(SELECT uu.username FROM messages AS mm, users AS uu WHERE \
 			mm.message_id = m.message_id AND mm.fromm = uu.user_id) AS fromm, \
@@ -400,6 +406,7 @@ void hdl1(int signum) {
 		syslog(LOG_INFO,"id[%s] %s: %s to %s \tat %s\n", row[0], row[2], row[1], row[3], row[4]);
 	}
 	printf("\n");
+	mysql_free_result(res);
 	if (sigprocmask(SIG_UNBLOCK, &set, NULL)) 
        	return;
 
@@ -442,11 +449,28 @@ void hdl2(int signum) {
 		syslog(LOG_INFO,"user %s is in %s group now\n", row[1], row[0]);
 	}
 	printf("\n");	
+	mysql_free_result(res);
 	if (sigprocmask(SIG_UNBLOCK, &set, NULL)) 
 		return;
 
 	return;
 }
+
+void* ext(/*void *args*/) {
+	//data_type *data = (data_type *)args;
+	char str[MSG_LEN];
+	while(1) {
+		fgets(str, sizeof(str), stdin);
+	
+		if (strncmp(str, "q!\n", sizeof (str)) == 0) {
+			mysql_close(mysql);
+			printf("server disabled\n");
+			exit(0);
+			//return 0;
+		}
+	}
+	
+} 
 
 void init(void *args, char *ip, char *upt) {
 	data_type *data = (data_type *)args;
@@ -474,7 +498,10 @@ void init(void *args, char *ip, char *upt) {
 		exit(1);
 	}
 	
-	mysql = mysql_init(mysql);
+	//mysql = mysql_init(mysql);
+	//mysql_init(&mysql);
+	mysql = mysql_init(NULL);
+	mysql_options(mysql, MYSQL_READ_DEFAULT_GROUP, "srv.c");
 	if (!mysql) {
 		puts("Init faild, out of memory?");
 		syslog(LOG_ERR,"Init faild, out of memory?");
@@ -594,10 +621,13 @@ MYSQL_RES *Mysql_find_msg(MYSQL *mysql, char *to) {
 }
 
 int Mysql_check_user(MYSQL *mysql, char *from) {
+	MYSQL_RES *res;
 	char sql[MSG_LEN + MAX_SQL_QUERY_LEN];
-	pthread_mutex_lock(&mutex);	
-	if (mysql_num_rows(User_by_name(mysql, from)) == 0) {
-		pthread_mutex_unlock(&mutex);	
+	pthread_mutex_lock(&mutex);
+	res = User_by_name(mysql, from);	
+	pthread_mutex_unlock(&mutex);
+	if (mysql_num_rows(res) == 0) {	
+		mysql_free_result(res);
 		///new user, need to register
 		snprintf(sql, sizeof(sql), "INSERT INTO users(username) values ('%s')", from);
 		pthread_mutex_lock(&mutex);
@@ -614,8 +644,8 @@ int Mysql_check_user(MYSQL *mysql, char *from) {
 			
 	}
 	else {
-		pthread_mutex_unlock(&mutex);	
 		///old user, need to say "hello"
+		mysql_free_result(res);
 		syslog(LOG_INFO,"Пользователь %s подключился\n", from);
 		return 0;
 	}	
@@ -639,10 +669,13 @@ unsigned short Is_msg_delivered(MYSQL *mysql, char *msg_id, char *tto) {
 	res = mysql_store_result(mysql);
 	pthread_mutex_unlock(&mutex);
 	if (mysql_num_rows(res) == 0) {
+		mysql_free_result(res);
 		return FALSE;
 	}
-	else	 
+	else {
+		mysql_free_result(res);	 
 		return TRUE;
+	}
 }
 
 unsigned short Add_to_delivered(MYSQL *mysql, char *msg_id, char *tto) {
@@ -722,7 +755,6 @@ unsigned short Add_to_group(MYSQL *mysql, char *from, char *groupname) {
 			pthread_mutex_unlock(&mutex);
 			fprintf(stderr, "Add_to_group: %s\n", mysql_error(mysql));
 			syslog(LOG_ERR,"Add_to_group: %s\n", mysql_error(mysql));
-			mysql_free_result(res);
 			return -1;
 		}
 		pthread_mutex_unlock(&mutex);

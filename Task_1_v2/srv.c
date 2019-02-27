@@ -1,6 +1,7 @@
 #include "mylib.h"
 
 int main(int argc, char *argv[]) { 
+	pthread_t tid;
 	data_type data;
 	char ip[16];
 	char loglvl[2];
@@ -61,18 +62,19 @@ int main(int argc, char *argv[]) {
 	data.fds[0].events = POLLIN;
 	data.thrs = 1;
 		
-	///thread for accepts
-	/*if(pthread_create(&data.tid, NULL, poll_connection, (void *)&data) != 0) {
-						perror("pthread_create");
-						syslog(LOG_ERR,"pthread_create");
-						exit(4);
+	if(pthread_create(&tid, NULL, ext, (void *)&data) != 0) {
+		perror("pthread_create");
+		syslog(LOG_ERR,"pthread_create");
+		exit(4);
 	}
-	if(pthread_join(data.tid, NULL) != 0) {
-						perror("pthread_join");
-						syslog(LOG_ERR,"pthread_join");
+	if(pthread_detach(tid) != 0) {
+						perror("pthread_detach");
+						syslog(LOG_ERR,"pthread_detach");
 						exit(5);
-	}	*/
+	}
+		
 	poll_connection(&data);
+		
 	mysql_close(mysql);
 	return 0;
 }

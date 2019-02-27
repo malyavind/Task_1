@@ -67,7 +67,7 @@ typedef struct {
 void* poll_connection (void *args);
 void init(void *args, char *ip, char *upt);
 void clean_stdin(void);
-void* sig(void *args);
+void* ext(/*void *args*/);
 void Print_menu();
 void Logmask(char *logmask);
 void hdl1(int signum);
