@@ -59,7 +59,6 @@ void* poll_connection (void *args) {
 					strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
 					message.todo = FALSE;
 					send(data->fds[data->clients].fd, &message, sizeof(message), 0);
-					mysql_free_result(res);
 				}
 				else {
 					strncpy (message.msg, "Вы состоите в следующих группах", sizeof(message.msg));
