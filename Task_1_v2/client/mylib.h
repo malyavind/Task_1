@@ -4,7 +4,7 @@
 #define TIME_SIZE 20
 #define MAX_NAME 32
 #define PORT 3325
-#define MAX_CL 1024
+#define MAX_CL 1000
 #define CL_PER_THR 2
 #define MSG_LEN 255  ///because of max characters in database cell
 #define MAX_DELAY 71582788 ///because of unsigned max value/60
@@ -14,6 +14,7 @@
 #define EXIT 15
 #define LOGIN 16
 #define SUCCESS_CONNECT 17
+#define IP_SIZE 16
 #define TRUE 1
 #define FALSE 0
 
@@ -51,14 +52,15 @@ typedef struct {
 
 typedef struct {
 	int listener;
-	int accepter[MAX_CL];
+	//int accepter[MAX_CL];
 	int clients;
 	int protocol;
 	int addr;
 	int thrs;
 	int users_per_thread;
-	
-	pthread_t tid;
+	int firstfd, lastfd;
+	unsigned short main_thread_flag;
+	pthread_t tid[MAX_CL];
 	
 	struct pollfd fds[MAX_CL];
 	struct sockaddr_in serveraddr;
@@ -67,16 +69,24 @@ typedef struct {
 	
 } data_type;
 
-void* poll_connection (void *args);
-void init(void *args, char *ip, char *upt);
+typedef struct {
+	char ip[IP_SIZE];
+	char username[MAX_NAME];
+	char password[MAX_NAME];
+	char name[MAX_NAME];
+	int port;
+} db_login_type;
+
+void *poll_connection (void *args);
+void init(void *args, void *db, char *ip, char *upt);
 void clean_stdin(void);
-void* ext(/*void *args*/);
+void* ext();
 void Print_menu();
 void Logmask(char *logmask);
 void hdl1(int signum);
 void hdl2(int signum);
 
-int sendall( int sock, const char * buff, int nBytes );
+int sendall( int sock, const char * buff, int nBytes);
 int Mysql_check_user(MYSQL *mysql, char *from);
 int menu();
 

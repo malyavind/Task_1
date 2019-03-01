@@ -1,10 +1,12 @@
 #include "mylib.h"
 
 int main(int argc, char *argv[]) { 
+	FILE *options;
 	pthread_t tid;
 	data_type data;
-	int i, option = 1;
-	char ip[16];
+	db_login_type db;
+	int i;
+	char ip[IP_SIZE];
 	char loglvl[2];
 	///SIGUSR1
 	struct sigaction act1;
@@ -26,26 +28,27 @@ int main(int argc, char *argv[]) {
 		syslog(LOG_ERR,"usage: ./srv <interface IP> <logmask> <user per thr> (<opt.txt>)\n");
 		exit(1);
 	}
-	if (argc == 5) {		
-		FILE *options;
+	
+	///getting data for db
+	options = fopen ("db_login.txt", "r");																	
+	while (fscanf (options, "%s%s%s%s%d", db.ip, db.username, db.password, db.name, &db.port) != EOF) {
+	}
+	fclose (options);
+
+	///if we have file with options in args
+	if (argc == 5) {
 		options = fopen (argv[4], "r");
 		printf("Обнаружен файл настроек. Параметры заменены на следующие\n");
 		while (fscanf (options, "%s%s", ip,  loglvl) != EOF) {
 			printf("ip: %s\t loglvl: %s\n", ip, loglvl);
 		}
 		fclose (options);
-		Logmask(loglvl);		
-		init((void *)&data, ip, argv[3]);
+		Logmask(loglvl);									///parameter validation and initialization
+		init((void *)&data, (void *)&db, ip, argv[3]);
 	}
 	else {
-		Logmask(argv[2]);		
-		init((void *)&data, argv[1], argv[3]);
-	}
-	
-	if(setsockopt(data.listener, SOL_SOCKET, /*SO_REUSEADDR*/(SO_REUSEPORT | SO_REUSEADDR),(char*)&option,sizeof(option)) < 0) {
-		printf("setsockopt failed\n");
-		close(data.listener);
-		exit(2);
+		Logmask(argv[2]);									///parameter validation and initialization
+		init((void *)&data, (void *)&db, argv[1], argv[3]);
 	}
 	
 	syslog(LOG_NOTICE,"Server started");
@@ -61,7 +64,6 @@ int main(int argc, char *argv[]) {
 		syslog(LOG_ERR,"listen error");
 		exit(3);
 	}
-	
 	syslog(LOG_NOTICE,"Server listening on port %d\n", ntohs(data.serveraddr.sin_port));
 	
 	data.fds[0].fd = data.listener;
@@ -70,7 +72,7 @@ int main(int argc, char *argv[]) {
 	for (i = 1; i < MAX_CL; i++)
 		data.fds[i].fd = -1;
 		
-	if(pthread_create(&tid, NULL, ext, 0/*(void *)&data*/) != 0) {
+	if(pthread_create(&tid, NULL, ext, 0) != 0) {
 		perror("pthread_create");
 		syslog(LOG_ERR,"pthread_create");
 		exit(4);

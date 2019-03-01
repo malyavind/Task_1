@@ -2,7 +2,7 @@
 
 int main(int argc, char **argv)
 {
-    int sock, slct;
+    int sock, slct, received;
     short grnt;
     unsigned tmp = MAX_DELAY + 1;
     char ttime[TIME_SIZE];
@@ -35,11 +35,20 @@ int main(int argc, char **argv)
 	}
     
     ///connection to server    
-   /* if (connect(sock, (SA *)&addr, sizeof(addr)) < 0) {
+   /*if (connect(sock, (SA *)&addr, sizeof(addr)) < 0) {
         perror("connect");
         exit(4);
-    }*/
-    while (1) {
+    }
+    received = 0;
+	received = recv(sock, &message.todo, sizeof(message.todo), MSG_WAITALL);
+	if (received != sizeof(message.todo) && received != 0){
+		printf("error getting connection acknowledgment\n");
+		exit (1);
+	}	
+    else 
+		printf("connected\n");
+	*/	
+	while (1) {
 		if (connect(sock, (SA *)&addr, sizeof(addr)) == 0) {
 			if (recv(sock, &message.todo, sizeof(message.todo), 0) > 0) {
 				if (message.todo == SUCCESS_CONNECT) {
@@ -53,7 +62,7 @@ int main(int argc, char **argv)
 		sleep(3);
 		printf("retrying to connect\n");
 	}
-    
+
 
 	memset(&message, 0, sizeof(message));
     
@@ -61,7 +70,12 @@ int main(int argc, char **argv)
 	message.todo = LOGIN;
 	snprintf(message.from, sizeof(message.from), "%s", argv[2]);
     send(sock, &message, sizeof(message), 0);
-	while (recv(sock, &message, sizeof(message), 0)) {
+    received = 0;
+	while ( (received = recv(sock, &message, sizeof(message), 0))) {
+		if (received != sizeof(message) && received != 0){
+			printf("recv error\n");
+			exit (1);
+		}
 		if(message.todo == TRUE)
 			break;
 		printf("%s\n", message.msg);
@@ -86,7 +100,12 @@ int main(int argc, char **argv)
 					perror("send error");
 					exit(5);
 				}
-				while (recv(sock, &message, sizeof(message), 0)) {
+				received = 0;
+				while ( (received = recv(sock, &message, sizeof(message), 0))) {
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == 0) {
 						break;
 					}	
@@ -153,14 +172,24 @@ int main(int argc, char **argv)
 							exit(5);
 						}
 						strncpy (message.time, "", sizeof(message.time));
-						recv(sock, &message.time, sizeof(message.time), 0);
+						received = 0;
+						received = recv(sock, &message.time, sizeof(message.time), 0);
+						if (received != sizeof(message.time) && received != 0){
+							printf("recv error\n");
+							exit (1);
+						}
 						if (strncmp(message.time, ttime, sizeof (message.time)) == 0) {
 							printf("Сервер подтердил получение сообщения\n");
 							message.garanty = FALSE;
 							break;
 						}	
 					}
-					recv(sock, &message, sizeof(message), 0);
+					received = 0;
+					received = recv(sock, &message, sizeof(message), 0);
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 				}
 				else {
 					message.garanty = FALSE;
@@ -169,7 +198,12 @@ int main(int argc, char **argv)
 						perror("send error");
 						exit(5);
 					}
-					recv(sock, &message, sizeof(message), 0);
+					received = 0;
+					received = recv(sock, &message, sizeof(message), 0);
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 				}		
 				
 				printf("%s\n",  message.msg);
@@ -188,7 +222,12 @@ int main(int argc, char **argv)
 				}
 				printf("Список доступных групп:\n");
 				///getting list of available groups
-				while (recv(sock, &message, sizeof(message), 0)) {
+				received = 0;
+				while ( (received = recv(sock, &message, sizeof(message), 0))) {
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == 0)
 						break;
 					printf("\t%s\n", message.msg);
@@ -236,7 +275,12 @@ int main(int argc, char **argv)
 							exit(5);
 						}
 						strncpy (message.time, "", sizeof(message.time));
-						recv(sock, &message.time, sizeof(message.time), 0);
+						received = 0;
+						received = recv(sock, &message.time, sizeof(message.time), 0);
+						if (received != sizeof(message.time) && received != 0){
+							printf("recv error\n");
+							exit (1);
+						}
 						if (strncmp(message.time, ttime, sizeof message.time) == 0) {
 							printf("Сервер подтердил получение сообщения\n");
 							message.garanty = FALSE;
@@ -254,7 +298,12 @@ int main(int argc, char **argv)
 				}
 				}	
 				///receiving acknowledgment
-				while (recv(sock, &message, sizeof(message), 0)) {
+				received = 0;
+				while ( (received = recv(sock, &message, sizeof(message), 0))) {
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == FALSE) {
 						printf("%s\n",  message.msg);
 						break;
@@ -278,7 +327,12 @@ int main(int argc, char **argv)
 					exit(5);
 				}
 				///getting list of delivered messages (delivered = read by addressee)
-				while (recv(sock, &message, sizeof(message), 0)) {
+				received = 0;
+				while ( ( received = recv(sock, &message, sizeof(message), 0))) {
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == 0) {
 						break;
 					}	
@@ -303,7 +357,12 @@ int main(int argc, char **argv)
 				}
 				printf("Выберите из списка уже существующих групп:\n");
 				///getting list of available groups
-				while (recv(sock, &message, sizeof(message), 0)) {
+				received = 0;
+				while ( (received = recv(sock, &message, sizeof(message), 0))) {
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == 0)
 						break;
 					printf("\t%s\n", message.msg);
@@ -321,7 +380,12 @@ int main(int argc, char **argv)
 				}
 				printf("Отправляем запрос на сервер\n");
 				
-				while (recv(sock, &message.todo, sizeof(message.todo), 0)) {
+				received = 0;
+				while ( (received = recv(sock, &message.todo, sizeof(message.todo), 0))) {
+					if (received != sizeof(message.todo) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == FALSE) {
 						printf("Ошибка создания/добавления в группу:\n");
 						break;
@@ -332,8 +396,14 @@ int main(int argc, char **argv)
 				if (message.todo == FALSE)
 					break;
 				if (message.todo == TRUE || message.todo == NEW) {
-					recv(sock, &message.msg, sizeof(message.msg), 0);
+					received = 0;
+					received = recv(sock, &message.msg, sizeof(message.msg), 0);
+					if (received != sizeof(message.msg) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					printf("%s\n", message.msg);
+					printf("Выберите действие:\n");
 					break;
 				}	
 						
@@ -350,7 +420,12 @@ int main(int argc, char **argv)
 				}
 				printf("Запрос списка групп, в которых Вы состоите:\n");
 				///getting list of your groups
-				while (recv(sock, &message, sizeof(message), 0)) {
+				received = 0;
+				while ( (received = recv(sock, &message, sizeof(message), 0))) {
+					if (received != sizeof(message) && received != 0){
+						printf("recv error\n");
+						exit (1);
+					}
 					if (message.todo == TRUE) {
 						break;
 					}
@@ -376,7 +451,12 @@ int main(int argc, char **argv)
 				}
 					printf("Отправляем запрос на сервер\n");
 					///check: are you in this group?
-					while (recv(sock, &message.todo, sizeof(message.todo), 0)) {
+					received = 0;
+					while ( (received = recv(sock, &message.todo, sizeof(message.todo), 0))) {
+						if (received != sizeof(message.todo) && received != 0){
+							printf("recv error\n");
+							exit (1);
+						}
 						if (message.todo == FALSE) {
 							printf("Вы не состоите в выбранной группе, повторите ввод:\n");
 							break;
@@ -386,7 +466,12 @@ int main(int argc, char **argv)
 					}
 					if (message.todo == TRUE) {
 						///receiving acknowledgment
-						recv(sock, &message.msg, sizeof(message.msg), 0);
+						received = 0;
+						received = recv(sock, &message.msg, sizeof(message.msg), 0);
+						if (received != sizeof(message.msg) && received != 0){
+							printf("recv error\n");
+							exit (1);
+						}
 						printf("%s\n", message.msg);
 						break;
 					}
