@@ -6,9 +6,9 @@ void *poll_connection (void *args) {
 	data_type *data = (data_type *)args;
 	msg_type message;
 	int ret, i, received, connfd;
-	int first_fd = data->firstfd, last_fd = data->lastfd;
+	int first_fd, last_fd;
 	unsigned short need_new_thread = FALSE;
-	unsigned short empty_thread;
+	unsigned short empty_thread, found;
 	unsigned short main_thread_flag = data->main_thread_flag;
 	char id[sizeof(message.id)];
 	MYSQL_ROW row;
@@ -16,8 +16,13 @@ void *poll_connection (void *args) {
 	
 	data->main_thread_flag = FALSE;							///next threads can be disabled
 
-	data->firstfd = data->lastfd;							///borders of useable
-	data->lastfd = data->firstfd + data->users_per_thread;	///sockets for thread
+	for (i = 1; i < MAX_CL; i++) {
+		if (data->fds[i].fd < 0) {
+			break;
+		}
+	}
+	first_fd = i;											///borders of useable
+	last_fd = first_fd + data->users_per_thread;			///sockets for next thread
 	
 	
 	while(1) {
@@ -30,431 +35,441 @@ void *poll_connection (void *args) {
 			syslog(LOG_INFO,"timeout\n");
 		}	
 		else {
-			if (data->fds[0].revents & POLLIN) {  ///new client connection
-				data->fds[0].revents = 0;
-				connfd = accept(data->listener, NULL, NULL);
-				if(connfd < 0) {
-					perror("accept");
-					syslog(LOG_ERR,"accept error");
-					exit(6);
+			found = FALSE;
+			for (i = first_fd; i <= last_fd; i++) {	///searching for available fd on thread
+				if (data->fds[i].fd < 0) {
+					found = TRUE;
+					break;
 				}
-				need_new_thread = TRUE;
-				for (i = first_fd; i < last_fd; i++) {
-					if (data->fds[i].fd < 0) {
+			}
+			if (found = TRUE) {
+				if (data->fds[0].revents & POLLIN) {  ///new client connection
+					data->fds[0].revents = 0;
+					connfd = accept(data->listener, NULL, NULL);
+					if(connfd < 0) {
+						perror("accept");
+						syslog(LOG_ERR,"accept error");
+						exit(6);
+					}
+					//data->client_connected = FALSE;
+					//pthread_mutex_lock(&mutex);
+					need_new_thread = TRUE;
+					for (i = first_fd; i < last_fd; i++) {
+						if (data->fds[i].fd < 0) {
+							data->fds[i].fd = connfd;
+							need_new_thread = FALSE;
+							break;
+						} 
+					}
+					if ( i == last_fd && data->fds[i].fd < 0)
 						data->fds[i].fd = connfd;
-						need_new_thread = FALSE;
-						break;
-					} 
-				}
-				if ( i == last_fd && data->fds[i].fd < 0) {
-					data->fds[i].fd = connfd;
-				}
-				data->clients++;
-				if (data->clients > MAX_CL) {
-					perror("too many clients");
-					syslog(LOG_ERR,"too many clients");
-					exit (15);
-				}
-				data->fds[i].events = POLLIN;
-				message.todo = SUCCESS_CONNECT;
-				//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
-				sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
+					//pthread_mutex_unlock(&mutex);	
+					data->clients++;
+					if (data->clients > MAX_CL) {
+						perror("too many clients");
+						syslog(LOG_ERR,"too many clients");
+						exit (15);
+					}
+					data->fds[i].events = POLLIN;
+					message.todo = SUCCESS_CONNECT;
+					//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
+					sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 
-				syslog(LOG_INFO,"Клиент присоеденился к сокету %d\n", data->fds[data->clients].fd);
-				
-				///registration or login
-				received = 0;
-				received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL);
-				if (received != sizeof(message) && received != 0)
-					syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
-				if (Mysql_check_user(mysql, message.from)) {
-					snprintf(message.msg, (sizeof(message.msg)), "Вы зарегестрированы как %s", message.from);
-				}
-				else {
-					snprintf(message.msg, (sizeof(message.msg)), "Добро пожаловать, %s\n", message.from);	
-				}
-				//send(data->fds[i].fd, &message, sizeof(message), 0);
-				sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+					syslog(LOG_INFO,"Клиент присоеденился к сокету %d\n", data->fds[i].fd);
 					
-				///sending info about groups
-				res = Find_users_groups(mysql, message.from);
-				if (mysql_num_rows(res) == 0) {
-					strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
-					message.todo = FALSE;
+					///registration or login
+					received = 0;
+					received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL);
+					if (received != sizeof(message) && received != 0)
+						syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
+					if (Mysql_check_user(mysql, message.from)) {
+						snprintf(message.msg, (sizeof(message.msg)), "Вы зарегестрированы как %s", message.from);
+					}
+					else {
+						snprintf(message.msg, (sizeof(message.msg)), "Добро пожаловать, %s\n", message.from);	
+					}
 					//send(data->fds[i].fd, &message, sizeof(message), 0);
 					sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-				}
-				else {
-					strncpy (message.msg, "Вы состоите в следующих группах", sizeof(message.msg));
-					//send(data->fds[i].fd, &message, sizeof(message), 0);
-					sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-					while( (row = mysql_fetch_row(res))) {
-						snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
+						
+					///sending info about groups
+					res = Find_users_groups(mysql, message.from);
+					if (mysql_num_rows(res) == 0) {
+						strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
+						message.todo = FALSE;
 						//send(data->fds[i].fd, &message, sizeof(message), 0);
 						sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 					}
-					message.todo = TRUE;
-					//send(data->fds[i].fd, &message, sizeof(message), 0);
-					sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-				}
-				mysql_free_result(res);
-				
-				if (need_new_thread == TRUE){
-					//close(connfd);
-					if(pthread_create(&data->tid[i - data->users_per_thread], NULL, poll_connection, data) != 0) {
-						perror("pthread_create");
-						syslog(LOG_ERR,"prthread_create error");
-						exit(4);
-					}		
-					if(pthread_detach(data->tid[i - data->users_per_thread]) != 0) {
-						perror("pthread_detach");
-						syslog(LOG_ERR,"pthread_detach error");
-						exit(5);
+					else {
+						strncpy (message.msg, "Вы состоите в следующих группах", sizeof(message.msg));
+						//send(data->fds[i].fd, &message, sizeof(message), 0);
+						sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+						while( (row = mysql_fetch_row(res))) {
+							snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
+							//send(data->fds[i].fd, &message, sizeof(message), 0);
+							sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+						}
+						message.todo = TRUE;
+						//send(data->fds[i].fd, &message, sizeof(message), 0);
+						sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 					}
-					syslog(LOG_INFO,"Сейчас на сервере %d клиентов.\n\t\tДля нового клиентаоздан новый поток\n", data->clients);
-				}				
-			}
+					mysql_free_result(res);
+					
+					if (need_new_thread == TRUE){
+						//close(connfd);
+						if(pthread_create(&data->tid[i - data->users_per_thread], NULL, poll_connection, data) != 0) {
+							perror("pthread_create");
+							syslog(LOG_ERR,"prthread_create error\n");
+							exit(4);
+						}		
+						if(pthread_detach(data->tid[i - data->users_per_thread]) != 0) {
+							perror("pthread_detach");
+							syslog(LOG_ERR,"pthread_detach error\n");
+							exit(5);
+						}
+						syslog(LOG_INFO,"Сейчас на сервере %d клиентов.\n\t\tДля нового клиента cоздан новый поток\n", data->clients);
+					}				
+				}
 
-			else {
-				for (i = first_fd; i < last_fd; i++) {
-					if (data->fds[i].revents & POLLIN) { ///message from client
-						data->fds[i].revents = 0;
-						received = 0;
-						received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL);
-						if (received != sizeof(message) && received != 0)
-							syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
-						if (message.garanty == TRUE)
-							//send(data->fds[i].fd, &message.time, sizeof(message.time), 0);
-							sendall(data->fds[i].fd, (const char*)&message.time, sizeof(message.time));	
-						if (received > 0) {
-							switch(message.todo) {
-								case 1:	///User's request for incoming messages				
-									res = Mysql_find_msg(mysql, message.from);
-									if (mysql_num_rows(res) == 0) {
-										syslog(LOG_INFO,"Нет сообщений для пользователя %s\n", message.from);
-										message.todo = NO_MESSAGES;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}
-									else {
-										syslog(LOG_INFO,"Следующие сообщения были отправлены пользователю %s:\n", message.from);
-										snprintf(message.to, sizeof(message.to), "%s", message.from);
-										while( (row = mysql_fetch_row(res))) {																					
-											snprintf(message.time, sizeof(message.time), "%s", row[3]);
-											snprintf(message.from, sizeof(message.from), "%s", row[2]);
-											snprintf(message.msg, sizeof(message.msg), "%s", row[1]);
-											snprintf(message.id, sizeof(message.id), "%s", row[0]);
-											
-											///Check, is this message already delivered?
-											if (Is_msg_delivered(mysql, message.id, message.to) == FALSE)
-												message.new_msg = TRUE;
-											else
-												message.new_msg = FALSE;
-											
-											syslog(LOG_INFO,"\t%s: %s\t\t%.19s\n", message.from, message.msg, message.time);
-											
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
-											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-											received = 0;
-											received = recv(data->fds[i].fd, &message.new_msg, sizeof(message.new_msg), MSG_WAITALL);
-											if (received != sizeof(message.new_msg) && received != 0)
-												syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
-											if (message.new_msg == TRUE) {
-												snprintf(id, sizeof(id), "%s", message.id);
-												if (Add_to_delivered(mysql, id, message.to) == 0) {
-													syslog(LOG_INFO,"Сообщение помечено, как доставленное\n");
-												}	
-												else {
-													syslog(LOG_ERR,"Ошибка подтверждения доставки\n");
-												}	
-											}
-										}							
-										message.todo = 0;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}
-									mysql_free_result(res);								
-								break;
-									
-								case 2:
-									if (Is_user_registered(mysql, message.to) == TRUE) {
-										///User sent message
-										syslog(LOG_INFO,"%s: %s\t to %s\n", message.from, message.msg, message.to);
-										
-										if (Mysql_insert_msg(mysql, message.from, message.to, message.msg, message.delay) == 0) {
-											syslog(LOG_INFO,"Сообщение добавлено в базу\n");
-											snprintf(message.msg, sizeof(message.msg), "Сервер отправил сообщение пользователю %s\nС задержкой %u мин.\n", message.to, message.delay / 60);
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
-											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-										}	
-										else {
-											printf("Ошибка добавления в базу\n");
-											syslog(LOG_ERR,"Ошибка добавления в базу\n");
-											strncpy (message.msg, "Ошибка отправки сообщения", sizeof(message.msg));
+				else {
+					for (i = first_fd; i < last_fd; i++) {
+						if (data->fds[i].revents & POLLIN) { ///message from client
+							data->fds[i].revents = 0;
+							received = 0;
+							received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL);
+							if (received != sizeof(message) && received != 0)
+								syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
+							if (message.garanty == TRUE)
+								//send(data->fds[i].fd, &message.time, sizeof(message.time), 0);
+								sendall(data->fds[i].fd, (const char*)&message.time, sizeof(message.time));	
+							if (received > 0) {
+								switch(message.todo) {
+									case 1:	///User's request for incoming messages				
+										res = Mysql_find_msg(mysql, message.from);
+										if (mysql_num_rows(res) == 0) {
+											syslog(LOG_INFO,"Нет сообщений для пользователя %s\n", message.from);
+											message.todo = NO_MESSAGES;
 											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										}
-									}
-									else {
-										syslog(LOG_INFO,"Получатель %s  не зарегистрирован\n", message.to);
-										snprintf(message.msg, sizeof(message.msg), "Получатель %s  не зарегистрирован\n", message.to);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}		
-								break;
-								
-								case 3:///User sent message to group
-									res = Mysql_find_groups(mysql);
-									while( (row = mysql_fetch_row(res))) {
-										///Sending list of available groups
-										snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}
-									mysql_free_result(res);
-									message.todo = 0;
-									//send(data->fds[i].fd, &message, sizeof(message), 0);
-									sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-								
-									received = 0;
-									received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL);
-									if (received != sizeof(message) && received != 0)
-										syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
-									if (message.garanty == TRUE)
-										//send(data->fds[i].fd, &message.time, sizeof(message.time), 0);
-										sendall(data->fds[i].fd, (const char*)&message.time, sizeof(message.time));
-									
-									if(Is_group_exists(mysql, message.to) == TRUE) {
-										res = Get_users_fromgroup(mysql, message.to);
-										if (mysql_num_rows(res) == 0) {
-											syslog(LOG_INFO,"В выбранной группе %s нет пользователей\n", message.to);
-											message.todo = FALSE;
-											strncpy (message.msg, "В выбранной группе нет пользователей", sizeof(message.msg));
+										else {
+											syslog(LOG_INFO,"Следующие сообщения были отправлены пользователю %s:\n", message.from);
+											snprintf(message.to, sizeof(message.to), "%s", message.from);
+											while( (row = mysql_fetch_row(res))) {																					
+												snprintf(message.time, sizeof(message.time), "%s", row[3]);
+												snprintf(message.from, sizeof(message.from), "%s", row[2]);
+												snprintf(message.msg, sizeof(message.msg), "%s", row[1]);
+												snprintf(message.id, sizeof(message.id), "%s", row[0]);
+												
+												///Check, is this message already delivered?
+												if (Is_msg_delivered(mysql, message.id, message.to) == FALSE)
+													message.new_msg = TRUE;
+												else
+													message.new_msg = FALSE;
+												
+												syslog(LOG_INFO,"\t%s: %s\t\t%.19s\n", message.from, message.msg, message.time);
+												
+												//send(data->fds[i].fd, &message, sizeof(message), 0);
+												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+												received = 0;
+												received = recv(data->fds[i].fd, &message.new_msg, sizeof(message.new_msg), MSG_WAITALL);
+												if (received != sizeof(message.new_msg) && received != 0)
+													syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
+												if (message.new_msg == TRUE) {
+													snprintf(id, sizeof(id), "%s", message.id);
+													if (Add_to_delivered(mysql, id, message.to) == 0) {
+														syslog(LOG_INFO,"Сообщение помечено, как доставленное\n");
+													}	
+													else {
+														syslog(LOG_ERR,"Ошибка подтверждения доставки\n");
+													}	
+												}
+											}							
+											message.todo = 0;
 											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-											mysql_free_result(res);
-											break;
-										}		
-										strncat(message.msg, "\t[to ", sizeof(message.msg) - strlen(message.msg));
-										strncat(message.msg, message.to, sizeof(message.msg) - strlen(message.msg));
-										strncat(message.msg, "]", sizeof(message.msg) - strlen(message.msg));
-										while( (row = mysql_fetch_row(res))) {	
-											snprintf(message.to, sizeof(message.to), "%s", row[0]);
+										}
+										mysql_free_result(res);								
+									break;
+										
+									case 2:
+										if (Is_user_registered(mysql, message.to) == TRUE) {
+											///User sent message
 											syslog(LOG_INFO,"%s: %s\t to %s\n", message.from, message.msg, message.to);
-												
+											
 											if (Mysql_insert_msg(mysql, message.from, message.to, message.msg, message.delay) == 0) {
 												syslog(LOG_INFO,"Сообщение добавлено в базу\n");
+												snprintf(message.msg, sizeof(message.msg), "Сервер отправил сообщение пользователю %s\nС задержкой %u мин.\n", message.to, message.delay / 60);
+												//send(data->fds[i].fd, &message, sizeof(message), 0);
+												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 											}	
 											else {
 												printf("Ошибка добавления в базу\n");
 												syslog(LOG_ERR,"Ошибка добавления в базу\n");
-												message.todo = FALSE;
 												strncpy (message.msg, "Ошибка отправки сообщения", sizeof(message.msg));
 												//send(data->fds[i].fd, &message, sizeof(message), 0);
 												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 											}
 										}
-										message.todo = TRUE;
-										strncpy (message.msg, "Ваше сообщение отправлено", sizeof(message.msg));
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-										mysql_free_result(res);
-					
-									}		
-									else {
-										message.todo = FALSE;
-										syslog(LOG_INFO,"Группа %s  не создана\n", message.to);
-										snprintf(message.msg, sizeof(message.msg), "Группа %s  не создана\n", message.to);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}			
-								break;
+										else {
+											syslog(LOG_INFO,"Получатель %s  не зарегистрирован\n", message.to);
+											snprintf(message.msg, sizeof(message.msg), "Получатель %s  не зарегистрирован\n", message.to);
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+										}		
+									break;
 									
-								case 4:
-									syslog(LOG_INFO,"Запрос статуса доставки сообщений пользователем %s\n", message.from);
-									res = Mysql_find_delivered(mysql, message.from);
-									if (mysql_num_rows(res) == 0) {
-										syslog(LOG_INFO,"Ни одно из сообщений пользователя %s не было доставлено\n", message.from);
-										message.todo = NO_MESSAGES;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}
-									else {
-										syslog(LOG_INFO,"Статус доставки сообщений выслан пользователю %s\n", message.from);
-										while( (row = mysql_fetch_row(res))) {	
-											snprintf(message.time, TIME_SIZE, "%s", row[2]);
-											snprintf(message.to, sizeof(message.to), "%s", row[1]);
+									case 3:///User sent message to group
+										res = Mysql_find_groups(mysql);
+										while( (row = mysql_fetch_row(res))) {
+											///Sending list of available groups
 											snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
 											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										}
+										mysql_free_result(res);
 										message.todo = 0;
 										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));	
-									}	
-									mysql_free_result(res);
-								break;
-								
-								case 5:
-									syslog(LOG_INFO,"Запрос регистрации в группе пользователем %s\n", message.from);
-									res = Mysql_find_groups(mysql);
-									while( (row = mysql_fetch_row(res))) {
-										///Sending list of available groups
-										snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
+										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+									
+										received = 0;
+										received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL);
+										if (received != sizeof(message) && received != 0)
+											syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
+										if (message.garanty == TRUE)
+											//send(data->fds[i].fd, &message.time, sizeof(message.time), 0);
+											sendall(data->fds[i].fd, (const char*)&message.time, sizeof(message.time));
+										
+										if(Is_group_exists(mysql, message.to) == TRUE) {
+											res = Get_users_fromgroup(mysql, message.to);
+											if (mysql_num_rows(res) == 0) {
+												syslog(LOG_INFO,"В выбранной группе %s нет пользователей\n", message.to);
+												message.todo = FALSE;
+												strncpy (message.msg, "В выбранной группе нет пользователей", sizeof(message.msg));
+												//send(data->fds[i].fd, &message, sizeof(message), 0);
+												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+												mysql_free_result(res);
+												break;
+											}		
+											strncat(message.msg, "\t[to ", sizeof(message.msg) - strlen(message.msg));
+											strncat(message.msg, message.to, sizeof(message.msg) - strlen(message.msg));
+											strncat(message.msg, "]", sizeof(message.msg) - strlen(message.msg));
+											while( (row = mysql_fetch_row(res))) {	
+												snprintf(message.to, sizeof(message.to), "%s", row[0]);
+												syslog(LOG_INFO,"%s: %s\t to %s\n", message.from, message.msg, message.to);
+													
+												if (Mysql_insert_msg(mysql, message.from, message.to, message.msg, message.delay) == 0) {
+													syslog(LOG_INFO,"Сообщение добавлено в базу\n");
+												}	
+												else {
+													printf("Ошибка добавления в базу\n");
+													syslog(LOG_ERR,"Ошибка добавления в базу\n");
+													message.todo = FALSE;
+													strncpy (message.msg, "Ошибка отправки сообщения", sizeof(message.msg));
+													//send(data->fds[i].fd, &message, sizeof(message), 0);
+													sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+												}
+											}
+											message.todo = TRUE;
+											strncpy (message.msg, "Ваше сообщение отправлено", sizeof(message.msg));
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+											mysql_free_result(res);
+						
+										}		
+										else {
+											message.todo = FALSE;
+											syslog(LOG_INFO,"Группа %s  не создана\n", message.to);
+											snprintf(message.msg, sizeof(message.msg), "Группа %s  не создана\n", message.to);
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+										}			
+									break;
+										
+									case 4:
+										syslog(LOG_INFO,"Запрос статуса доставки сообщений пользователем %s\n", message.from);
+										res = Mysql_find_delivered(mysql, message.from);
+										if (mysql_num_rows(res) == 0) {
+											syslog(LOG_INFO,"Ни одно из сообщений пользователя %s не было доставлено\n", message.from);
+											message.todo = NO_MESSAGES;
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+										}
+										else {
+											syslog(LOG_INFO,"Статус доставки сообщений выслан пользователю %s\n", message.from);
+											while( (row = mysql_fetch_row(res))) {	
+												snprintf(message.time, TIME_SIZE, "%s", row[2]);
+												snprintf(message.to, sizeof(message.to), "%s", row[1]);
+												snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
+												//send(data->fds[i].fd, &message, sizeof(message), 0);
+												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+											}
+											message.todo = 0;
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));	
+										}	
+										mysql_free_result(res);
+									break;
+									
+									case 5:
+										syslog(LOG_INFO,"Запрос регистрации в группе пользователем %s\n", message.from);
+										res = Mysql_find_groups(mysql);
+										while( (row = mysql_fetch_row(res))) {
+											///Sending list of available groups
+											snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+										}
+										mysql_free_result(res);
+										message.todo = 0;
 										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									}
-									mysql_free_result(res);
-									message.todo = 0;
-									//send(data->fds[i].fd, &message, sizeof(message), 0);
-									sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-									received = 0;
-									while ((received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL))) {
-										if (received != sizeof(message) || received != 0)
-											syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
-										if (Is_group_exists(mysql, message.msg) == FALSE) {
-											if (Create_and_join(mysql, message.msg, message.from)) {
-												message.todo = NEW;
+										received = 0;
+										while ((received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL))) {
+											if (received != sizeof(message) || received != 0)
+												syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
+											if (Is_group_exists(mysql, message.msg) == FALSE) {
+												if (Create_and_join(mysql, message.msg, message.from)) {
+													message.todo = NEW;
+													//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
+													sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
+													break;
+												}
+												else {
+													message.todo = FALSE;
+													//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
+													sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
+													break;
+												}		
+												
+											}
+											else {
+												message.todo = TRUE;
 												//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 												sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 												break;
+											}	
+										}
+										if (message.todo == FALSE)
+											break;
+										else if (message.todo == NEW) {
+											syslog(LOG_INFO,"Пользователь %s вступил в группу %s\n", message.from, message.msg);
+											strncpy (message.msg, "Вы присоеденились к группе", sizeof(message.msg));
+											//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
+											sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
+											break;
+										}	
+										if (Add_to_group(mysql, message.from, message.msg) == TRUE) {
+											syslog(LOG_INFO,"Пользователь %s вступил в группу %s\n", message.from, message.msg);
+											strncpy (message.msg, "Вы присоеденились к группе", sizeof(message.msg));
+											//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
+											sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
+										}											
+										else {
+											syslog(LOG_INFO,"Пользователь %s уже состоит в группе %s\n", message.from, message.msg);
+											strncpy (message.msg, "Вы уже состоите в данной группе", sizeof(message.msg));
+											//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
+											sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
+										}	
+									break;
+										
+									case 6:
+										syslog(LOG_INFO,"Запрос выхода из группы пользователем %s\n", message.from);
+										res = Find_users_groups(mysql, message.from);
+										if (mysql_num_rows(res) == 0) {
+											syslog(LOG_INFO,"Пользователь %s не состоит ни в одной группе\n", message.from);
+											strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
+											message.todo = FALSE;
+											//send(data->fds[i].fd, &message, sizeof(message), 0);
+											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
+											mysql_free_result(res);
+											break;
+										}
+										else {
+											while( (row = mysql_fetch_row(res))) {
+												snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
+												//send(data->fds[i].fd, &message, sizeof(message), 0);
+												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 											}
-											else {
+											message.todo = TRUE;
+											send(data->fds[i].fd, &message, sizeof(message), 0);
+										}
+										mysql_free_result(res);
+										///Geting user's choise
+										received = 0;
+										while ( (received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL))) {
+											if (received != sizeof(message) || received != 0)
+												syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
+											if (Is_user_ingroup(mysql, message.from, message.msg) == FALSE) {
 												message.todo = FALSE;
 												//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 												sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
-												break;
-											}		
-											
-										}
-										else {
-											message.todo = TRUE;
-											//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
-											sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
-											break;
-										}	
-									}
-									if (message.todo == FALSE)
-										break;
-									else if (message.todo == NEW) {
-										syslog(LOG_INFO,"Пользователь %s вступил в группу %s\n", message.from, message.msg);
-										strncpy (message.msg, "Вы присоеденились к группе", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
-										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
-										break;
-									}	
-									if (Add_to_group(mysql, message.from, message.msg) == TRUE) {
-										syslog(LOG_INFO,"Пользователь %s вступил в группу %s\n", message.from, message.msg);
-										strncpy (message.msg, "Вы присоеденились к группе", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
-										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
-									}											
-									else {
-										syslog(LOG_INFO,"Пользователь %s уже состоит в группе %s\n", message.from, message.msg);
-										strncpy (message.msg, "Вы уже состоите в данной группе", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
-										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
-									}	
-								break;
-									
-								case 6:
-									syslog(LOG_INFO,"Запрос выхода из группы пользователем %s\n", message.from);
-									res = Find_users_groups(mysql, message.from);
-									if (mysql_num_rows(res) == 0) {
-										syslog(LOG_INFO,"Пользователь %s не состоит ни в одной группе\n", message.from);
-										strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
-										message.todo = FALSE;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
-										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-										mysql_free_result(res);
-										break;
-									}
-									else {
-										while( (row = mysql_fetch_row(res))) {
-											snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
-											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
-										}
-										message.todo = TRUE;
-										send(data->fds[i].fd, &message, sizeof(message), 0);
-									}
-									mysql_free_result(res);
-									///Geting user's choise
-									received = 0;
-									while ( (received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL))) {
-										if (received != sizeof(message) || received != 0)
-											syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
-										if (Is_user_ingroup(mysql, message.from, message.msg) == FALSE) {
-											message.todo = FALSE;
-											//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
-											sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
-										}
-										else {
-											message.todo = TRUE;
-											//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
-											sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
-											break;
-										}	
-									}
-									if (Delete_user_fromgroup(mysql, message.from, message.msg) == 0) {
-										syslog(LOG_INFO,"Пользоватеель %s вышел из группы %s\n",message.from, message.msg);
-										strncpy (message.msg, "Вы вышли из группы", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
-										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
-									}											
-									else {
-										strncpy (message.msg, "Ошибка выхода из группы", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
-										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
-									}	
-								break;
-								
-								case EXIT:
-									///normal disconnect
-									data->clients--;
-									syslog(LOG_INFO,"_Клиент отсоеденился от сокета %d\n\t\tСейчас на сервере %d клиент(а/ов)\n", data->fds[i].fd, data->clients);
-									close(data->fds[i].fd);
-									memset(&message, 0, sizeof(message));
-									data->fds[i].fd = -1; 	///make fd available
-									if (main_thread_flag == FALSE) {		///searching for active clients on thread
-										empty_thread = TRUE;
-										for (i = first_fd; i < last_fd; i++) {
-											if (data->fds[i].fd > 0) {
-												empty_thread = FALSE;
-												break;
 											}
+											else {
+												message.todo = TRUE;
+												//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
+												sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
+												break;
+											}	
 										}
-										if (empty_thread == TRUE)
-											return 0;						///shotdown thread if not found
-									}
-								break;
+										if (Delete_user_fromgroup(mysql, message.from, message.msg) == 0) {
+											syslog(LOG_INFO,"Пользоватеель %s вышел из группы %s\n",message.from, message.msg);
+											strncpy (message.msg, "Вы вышли из группы", sizeof(message.msg));
+											//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
+											sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
+										}											
+										else {
+											strncpy (message.msg, "Ошибка выхода из группы", sizeof(message.msg));
+											//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
+											sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
+										}	
+									break;
 									
-								
-							}		
-						}
-						else if (received == 0) {
-							///ctrl+c disconnect or smthng
-							data->clients--;
-							syslog(LOG_INFO,"Клиент отсоеденился от сокета %d\n\t\tСейчас на сервере %d клиент(а/ов)\n", data->fds[i].fd, data->clients);
-							close(data->fds[i].fd);
-							memset(&message, 0, sizeof(message));
-							data->fds[i].fd = -1; ///make fd available
-							if (main_thread_flag == FALSE) { 			///searching for active clients on thread
-								empty_thread = TRUE;					
-								for (i = first_fd; i < last_fd; i++) {
-									if (data->fds[i].fd > 0) {
-										empty_thread = FALSE;
-										break;
-									}
-								}
-								if (empty_thread != FALSE)
-									return 0;							///shotdown thread if not found
+									case EXIT:
+										///normal disconnect
+										data->clients--;
+										syslog(LOG_INFO,"_Клиент отсоеденился от сокета %d\n\t\tСейчас на сервере %d клиент(а/ов)\n", data->fds[i].fd, data->clients);
+										close(data->fds[i].fd);
+										memset(&message, 0, sizeof(message));
+										data->fds[i].fd = -1;						///make fd available
+										if (main_thread_flag == FALSE) {		
+											empty_thread = TRUE;
+											for (i = first_fd; i < last_fd; i++) {	///searching for active clients on thread
+												if (data->fds[i].fd > 0) {
+													empty_thread = FALSE;
+													break;
+												}
+											}
+											if (empty_thread == TRUE)
+												return 0;							///shotdown thread if not found
+										}
+									break;
+										
+									
+								}		
 							}
-							
-						}
-					}	
+							else if (received == 0) {
+								///ctrl+c disconnect or smthng
+								data->clients--;
+								syslog(LOG_INFO,"Клиент отсоеденился от сокета %d\n\t\tСейчас на сервере %d клиент(а/ов)\n", data->fds[i].fd, data->clients);
+								close(data->fds[i].fd);
+								memset(&message, 0, sizeof(message));
+								data->fds[i].fd = -1;						///make fd available
+								if (main_thread_flag == FALSE) { 			
+									empty_thread = TRUE;					
+									for (i = first_fd; i < last_fd; i++) {	///searching for active clients on thread
+										if (data->fds[i].fd > 0) {
+											empty_thread = FALSE;
+											break;
+										}
+									}
+									if (empty_thread != FALSE)
+										return 0;							///shotdown thread if not found
+								}
+							}
+						}	
+					}
 				}
-			}	
+			}		
 		}					
 	}
 	return 0;
@@ -606,8 +621,6 @@ void init(void *args, void *db, char *ip, char *upt) {
 		exit(1);
 	}
 	data->main_thread_flag = TRUE;
-	data->firstfd = 1;
-	data->lastfd = data->firstfd + data->users_per_thread;
 	
 	//mysql = mysql_init(mysql);
 	//mysql_init(&mysql);

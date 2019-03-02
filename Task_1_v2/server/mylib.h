@@ -58,8 +58,8 @@ typedef struct {
 	int addr;
 	int thrs;
 	int users_per_thread;
-	int firstfd, lastfd;
 	unsigned short main_thread_flag;
+	unsigned short client_connected;
 	pthread_t tid[MAX_CL];
 	
 	struct pollfd fds[MAX_CL];
