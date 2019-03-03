@@ -10,7 +10,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/srv",
-            "args": ["192.168.22.18", "3", "2"],
+            "args": ["-i", "192.168.22.18", "-l", "3", "-u", "1"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

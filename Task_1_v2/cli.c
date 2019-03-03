@@ -5,23 +5,41 @@ pthread_mutex_t mutex;
 int main(int argc, char **argv)
 {
 	pthread_t tid;
-    int sock, slct, received;
+    int sock, received, rez = 0;
     short grnt;
     unsigned tmp = MAX_DELAY + 1;
+	char slct;
     char ttime[TIME_SIZE];
+	char username[MAX_NAME];
     struct sockaddr_in addr;
 	time_t ticks;
 	msg_type message;
 	
-	///parameter validation 
-	if (argc != 3){
-		printf("usage: ./cli <server IP> <username>\n");
+	while ( (rez = getopt(argc, argv, "i:u:")) != -1){
+		switch (rez) {
+			case 'i':
+				if (inet_pton(AF_INET, optarg, &addr.sin_addr) <= 0) {
+					printf("Некорректный IP адрес: %s\n", optarg);  /// ip address validation
+					exit(3);
+				}
+			break;
+			case 'u':
+				if (strlen(optarg) > MAX_NAME) {
+					printf("Имя слишком длинное. Максимальнная длина имени %d\n", MAX_NAME);
+					exit(1);
+				}
+				snprintf(username, sizeof(username), "%s", optarg);
+			break;
+			case '?':
+				printf("Invalid argument '%s'\n", optarg);
+				break;
+        }
+	}
+	if (argc != 5){
+		printf("usage: ./cli -i Server_IP -u username\n");
 		exit(1);
 	}
-	if (strlen(argv[2]) > MAX_NAME) {
-		printf("Имя слишком длинное. Максимальнная длина имени %d\n", MAX_NAME);
-		exit(1);
-	}
+
 	
 	pthread_mutex_init(&mutex, NULL);
 
@@ -34,10 +52,6 @@ int main(int argc, char **argv)
 	
     addr.sin_family = AF_INET;
     addr.sin_port = htons(PORT); 
-    if (inet_pton(AF_INET, argv[1], &addr.sin_addr) <= 0) {
-		printf("Некорректный IP адрес: %s\n", argv[1]);  /// ip address validation
-		exit(3);
-	}
     
     ///connection to server    
    if (connect(sock, (SA *)&addr, sizeof(addr)) < 0) {
@@ -56,7 +70,7 @@ int main(int argc, char **argv)
     
 	///registration or login
 	message.todo = LOGIN;
-	snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+	snprintf(message.from, sizeof(message.from), "%s", username);
 	if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 		perror("send error");
 		exit(5);
@@ -94,9 +108,9 @@ int main(int argc, char **argv)
 		pthread_mutex_lock(&mutex);
 		message.garanty = FALSE;
 		switch(slct) {
-			case 1:///check incoming messages
-				message.todo = slct;
-				snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+			case '1':///check incoming messages
+				message.todo = atoi(&slct); 
+				snprintf(message.from, sizeof(message.from), "%s", username);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 					perror("send error");
 					exit(5);
@@ -134,9 +148,9 @@ int main(int argc, char **argv)
 				printf("Выберите действие:\n");	
 				break;
 				
-			case 2: ///send message to user
-				message.todo = slct;
-				snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+			case '2': ///send message to user
+				message.todo = atoi(&slct); ;
+				snprintf(message.from, sizeof(message.from), "%s", username);
 				
 				grnt = 0;
 				printf("1 - Отправить с гарантией доставки\n2 - Отправить без гарантии доставки\n");
@@ -226,11 +240,11 @@ int main(int argc, char **argv)
 				printf("Выберите действие:\n");	
 				break;
 			
-			case 3: ///send message to group
+			case '3': ///send message to group
 				
 				///sending request for available groups
-				message.todo = slct;
-				snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+				message.todo = atoi(&slct); ;
+				snprintf(message.from, sizeof(message.from), "%s", username);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 					perror("send error");
 					exit(5);
@@ -251,7 +265,7 @@ int main(int argc, char **argv)
 						break;
 					printf("\t%s\n", message.msg);
 				}
-				message.todo = slct;
+				message.todo = atoi(&slct); ;
 								
 				grnt = 0;
 				printf("1 - Отправить с гарантией доставки\n2 - Отправить без гарантии доставки\n");
@@ -343,9 +357,9 @@ int main(int argc, char **argv)
 				printf("Выберите действие:\n");	
 				break;
 				
-			case 4: ///request for messages status
-				message.todo = slct;
-				snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+			case '4': ///request for messages status
+				message.todo = atoi(&slct); ;
+				snprintf(message.from, sizeof(message.from), "%s", username);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 					perror("send error");
 					exit(5);
@@ -376,9 +390,9 @@ int main(int argc, char **argv)
 				printf("Выберите действие:\n");			
 				break;
 			
-			case 5: ///join group or create+join
-				message.todo = slct;
-				snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+			case '5': ///join group or create+join
+				message.todo = atoi(&slct); ;
+				snprintf(message.from, sizeof(message.from), "%s", username);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 					perror("send error");
 					exit(5);
@@ -401,8 +415,8 @@ int main(int argc, char **argv)
 				}
 				///if the group does not exist, it will be created
 				printf("Или введите название новой группы:\n");
-				message.todo = slct;
-				clean_stdin();
+				message.todo = atoi(&slct); ;
+				//clean_stdin();
 				
 				fgets (message.msg, MSG_LEN, stdin);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
@@ -450,9 +464,9 @@ int main(int argc, char **argv)
 				printf("Выберите действие:\n");
 				break;
 			
-			case 6: ///leave group
-				message.todo = slct;
-				snprintf(message.from, sizeof(message.from), "%s", argv[2]);
+			case '6': ///leave group
+				message.todo = atoi(&slct); ;
+				snprintf(message.from, sizeof(message.from), "%s", username);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 					perror("send error");
 					exit(5);
@@ -484,7 +498,7 @@ int main(int argc, char **argv)
 				}
 					
 				printf("Введите название группы, из которой хотите выйти:\n");	
-				message.todo = slct;
+				message.todo = atoi(&slct); ;
 				clean_stdin();
 				while(1){
 					fgets(message.msg, MSG_LEN, stdin);
@@ -532,17 +546,19 @@ int main(int argc, char **argv)
 				printf("Выберите действие:\n");
 				break;
 							
-			case 7:
+			case '7':
 				Print_menu();
+				pthread_mutex_unlock(&mutex);
 			break;
 			
-			case 8:
+			case '8':
 				message.todo = EXIT;
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
 					perror("send error");
 					exit(5);
 				}
 				close(sock);
+				pthread_mutex_unlock(&mutex);
 			return 0;
 		}	
 	}	

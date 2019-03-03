@@ -60,8 +60,8 @@ typedef struct {
 	int addr;
 	int thrs;
 	int users_per_thread;
+	int firstfd, lastfd;
 	unsigned short main_thread_flag;
-	unsigned short client_connected;
 	pthread_t tid[MAX_CL];
 	
 	struct pollfd fds[MAX_CL];
@@ -91,8 +91,8 @@ void *ask_for_delivered(void *msg);
 
 int sendall(int sock, const char * buff, int nBytes);
 int Mysql_check_user(MYSQL *mysql, char *from);
-int menu();
 int Readable_timeo(int fd, int sec);
+char menu();
 
 unsigned short Is_next_thr_free(int last, int usr_per_thr, void *args);
 unsigned short Is_this_thr_full(int first, int usr_per_thr, void *args);

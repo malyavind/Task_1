@@ -1,10 +1,17 @@
+CC=gcc
+LIBS=-lpthread -lmysqlclient
+FLAGS=-Wall
+
 all: srv cli
 	
-srv: srv.c
-	gcc -Wall -o srv srv.c mylib.c -lpthread -lmysqlclient
+srv: srv.o mylib.o
+	$(CC) $(FLAGS) mylib.o srv.o $(LIBS) -o srv
 
-cli: cli.c
-	gcc -Wall -o cli cli.c mylib.c -lpthread -lmysqlclient
+cli: cli.o mylib.o
+	$(CC) $(FLAGS) mylib.o cli.o $(LIBS) -o cli
 
+%.o: %.c
+	$(CC) -c $^ -o $@
 
-
+clean:
+	rm -rf *.o srv cli
