@@ -15,6 +15,7 @@
 #define LOGIN 16
 #define SUCCESS_CONNECT 17
 #define IP_SIZE 16
+#define JUST_ASK 9
 #define TRUE 1
 #define FALSE 0
 
@@ -30,6 +31,7 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <poll.h>
+#include <sys/select.h>
 #include <mysql/mysql.h>
 #include <time.h>
 #include <syslog.h>
@@ -80,17 +82,21 @@ typedef struct {
 void *poll_connection (void *args);
 void init(void *args, void *db, char *ip, char *upt);
 void clean_stdin(void);
-void* ext();
+void *ext();
 void Print_menu();
 void Logmask(char *logmask);
 void hdl1(int signum);
 void hdl2(int signum);
+void *ask_for_delivered(void *msg);
 
-int sendall( int sock, const char * buff, int nBytes);
+int sendall(int sock, const char * buff, int nBytes);
 int Mysql_check_user(MYSQL *mysql, char *from);
 int menu();
+int Readable_timeo(int fd, int sec);
 
-unsigned short Mysql_insert_msg(MYSQL *mysql, char *message, char *to, char *from, int delay);
+unsigned short Is_next_thr_free(int last, int usr_per_thr, void *args);
+unsigned short Is_this_thr_full(int first, int usr_per_thr, void *args);
+unsigned short Mysql_insert_msg(MYSQL *mysql, char *message, char *to, char *from, int delay, unsigned short garanty);
 unsigned short Is_msg_delivered(MYSQL *mysql, char *msg_id, char *tto);
 unsigned short Add_to_group(MYSQL *mysql, char *from, char *groupname);
 unsigned short Is_group_exists(MYSQL *mysql, char *groupname);
@@ -98,7 +104,8 @@ unsigned short Is_user_ingroup(MYSQL *mysql, char *from, char *groupname);
 unsigned short Delete_user_fromgroup(MYSQL *mysql, char *from, char *groupname);
 unsigned short Add_to_delivered(MYSQL *mysql, char *delivered, char *tto);
 unsigned short Is_user_registered(MYSQL *mysql, char *to);
-unsigned short Create_and_join(MYSQL *mysql, char* groupname, char *from);
+unsigned short Create_and_join(MYSQL *mysql, char *groupname, char *from);
+unsigned short Mark_as_shown(MYSQL *mysql, char *id);
 
 MYSQL_RES *User_by_name(MYSQL *mysql, char *name);
 MYSQL_RES *Mysql_find_msg(MYSQL *mysql, char *to);
