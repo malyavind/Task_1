@@ -64,7 +64,6 @@ void *poll_connection (void *args) {
 					}
 					data->fds[i].events = POLLIN;
 					message.todo = SUCCESS_CONNECT;
-					//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 					sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 
 					syslog(LOG_INFO,"Клиент присоеденился к сокету %d\n", data->fds[i].fd);
@@ -80,7 +79,6 @@ void *poll_connection (void *args) {
 					else {
 						snprintf(message.msg, (sizeof(message.msg)), "Добро пожаловать, %s\n", message.from);	
 					}
-					//send(data->fds[i].fd, &message, sizeof(message), 0);
 					sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 						
 					///sending info about groups
@@ -88,26 +86,21 @@ void *poll_connection (void *args) {
 					if (mysql_num_rows(res) == 0) {
 						strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
 						message.todo = FALSE;
-						//send(data->fds[i].fd, &message, sizeof(message), 0);
 						sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 					}
 					else {
 						strncpy (message.msg, "Вы состоите в следующих группах", sizeof(message.msg));
-						//send(data->fds[i].fd, &message, sizeof(message), 0);
 						sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 						while( (row = mysql_fetch_row(res))) {
 							snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-							//send(data->fds[i].fd, &message, sizeof(message), 0);
 							sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 						}
 						message.todo = TRUE;
-						//send(data->fds[i].fd, &message, sizeof(message), 0);
 						sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 					}
 					mysql_free_result(res);
 					
 					if (need_new_thread == TRUE){
-						//close(connfd);
 						if(pthread_create(&data->tid[i - data->users_per_thread], NULL, poll_connection, data) != 0) {
 							perror("pthread_create");
 							syslog(LOG_ERR,"prthread_create error");
@@ -132,7 +125,6 @@ void *poll_connection (void *args) {
 							syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
 
 						if (message.garanty == TRUE)
-							//send(data->fds[i].fd, &message.time, sizeof(message.time), 0);
 							sendall(data->fds[i].fd, (const char*)&message.time, sizeof(message.time));	
 						if (received > 0) {
 							switch(message.todo) {
@@ -141,7 +133,6 @@ void *poll_connection (void *args) {
 									if (mysql_num_rows(res) == 0) {
 										syslog(LOG_INFO,"Нет сообщений для пользователя %s\n", message.from);
 										message.todo = NO_MESSAGES;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}
 									else {
@@ -161,7 +152,6 @@ void *poll_connection (void *args) {
 											
 											syslog(LOG_INFO,"\t%s: %s\t\t%.19s\n", message.from, message.msg, message.time);
 											
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 											received = 0;
 											received = recv(data->fds[i].fd, &message.new_msg, sizeof(message.new_msg), MSG_WAITALL);
@@ -178,7 +168,6 @@ void *poll_connection (void *args) {
 											}
 										}							
 										message.todo = 0;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}
 									mysql_free_result(res);								
@@ -192,21 +181,18 @@ void *poll_connection (void *args) {
 										if (Mysql_insert_msg(mysql, message.from, message.to, message.msg, message.delay, message.garanty) == 0) {
 											syslog(LOG_INFO,"Сообщение добавлено в базу\n");
 											snprintf(message.msg, sizeof(message.msg), "Сервер отправил сообщение пользователю %s\nС задержкой %u мин.\n", message.to, message.delay / 60);
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										}	
 										else {
 											printf("Ошибка добавления в базу\n");
 											syslog(LOG_ERR,"Ошибка добавления в базу\n");
 											strncpy (message.msg, "Ошибка отправки сообщения", sizeof(message.msg));
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										}
 									}
 									else {
 										syslog(LOG_INFO,"Получатель %s  не зарегистрирован\n", message.to);
 										snprintf(message.msg, sizeof(message.msg), "Получатель %s  не зарегистрирован\n", message.to);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}		
 									break;
@@ -216,12 +202,10 @@ void *poll_connection (void *args) {
 									while( (row = mysql_fetch_row(res))) {
 										///Sending list of available groups
 										snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}
 									mysql_free_result(res);
 									message.todo = 0;
-									//send(data->fds[i].fd, &message, sizeof(message), 0);
 									sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 								
 									received = 0;
@@ -229,7 +213,6 @@ void *poll_connection (void *args) {
 									if (received != sizeof(message) && received != 0)
 										syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
 									if (message.garanty == TRUE)
-										//send(data->fds[i].fd, &message.time, sizeof(message.time), 0);
 										sendall(data->fds[i].fd, (const char*)&message.time, sizeof(message.time));
 									
 									if(Is_group_exists(mysql, message.to) == TRUE) {
@@ -238,7 +221,6 @@ void *poll_connection (void *args) {
 											syslog(LOG_INFO,"В выбранной группе %s нет пользователей\n", message.to);
 											message.todo = FALSE;
 											strncpy (message.msg, "В выбранной группе нет пользователей", sizeof(message.msg));
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 											mysql_free_result(res);
 											break;
@@ -258,13 +240,11 @@ void *poll_connection (void *args) {
 												syslog(LOG_ERR,"Ошибка добавления в базу\n");
 												message.todo = FALSE;
 												strncpy (message.msg, "Ошибка отправки сообщения", sizeof(message.msg));
-												//send(data->fds[i].fd, &message, sizeof(message), 0);
 												sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 											}
 										}
 										message.todo = TRUE;
 										strncpy (message.msg, "Ваше сообщение отправлено", sizeof(message.msg));
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										mysql_free_result(res);
 					
@@ -273,7 +253,6 @@ void *poll_connection (void *args) {
 										message.todo = FALSE;
 										syslog(LOG_INFO,"Группа %s  не создана\n", message.to);
 										snprintf(message.msg, sizeof(message.msg), "Группа %s  не создана\n", message.to);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}			
 								break;
@@ -284,7 +263,7 @@ void *poll_connection (void *args) {
 									if (mysql_num_rows(res) == 0) {
 										syslog(LOG_INFO,"Ни одно из сообщений пользователя %s не было доставлено\n", message.from);
 										message.todo = NO_MESSAGES;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
+
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}
 									else {
@@ -293,11 +272,9 @@ void *poll_connection (void *args) {
 											snprintf(message.time, TIME_SIZE, "%s", row[2]);
 											snprintf(message.to, sizeof(message.to), "%s", row[1]);
 											snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										}
 										message.todo = 0;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));	
 									}	
 									mysql_free_result(res);
@@ -309,12 +286,10 @@ void *poll_connection (void *args) {
 									while( (row = mysql_fetch_row(res))) {
 										///Sending list of available groups
 										snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									}
 									mysql_free_result(res);
 									message.todo = 0;
-									//send(data->fds[i].fd, &message, sizeof(message), 0);
 									sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 									received = 0;
 									while ((received = recv(data->fds[i].fd, &message, sizeof(message), MSG_WAITALL))) {
@@ -323,13 +298,11 @@ void *poll_connection (void *args) {
 										if (Is_group_exists(mysql, message.msg) == FALSE) {
 											if (Create_and_join(mysql, message.msg, message.from)) {
 												message.todo = NEW;
-												//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 												sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 												break;
 											}
 											else {
 												message.todo = FALSE;
-												//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 												sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 												break;
 											}		
@@ -337,7 +310,6 @@ void *poll_connection (void *args) {
 										}
 										else {
 											message.todo = TRUE;
-											//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 											sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 											break;
 										}	
@@ -347,20 +319,17 @@ void *poll_connection (void *args) {
 									else if (message.todo == NEW) {
 										syslog(LOG_INFO,"Пользователь %s вступил в группу %s\n", message.from, message.msg);
 										strncpy (message.msg, "Вы присоеденились к группе", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
 										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
 										break;
 									}	
 									if (Add_to_group(mysql, message.from, message.msg) == TRUE) {
 										syslog(LOG_INFO,"Пользователь %s вступил в группу %s\n", message.from, message.msg);
 										strncpy (message.msg, "Вы присоеденились к группе", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
 										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
 									}											
 									else {
 										syslog(LOG_INFO,"Пользователь %s уже состоит в группе %s\n", message.from, message.msg);
 										strncpy (message.msg, "Вы уже состоите в данной группе", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
 										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
 									}	
 								break;
@@ -372,7 +341,6 @@ void *poll_connection (void *args) {
 										syslog(LOG_INFO,"Пользователь %s не состоит ни в одной группе\n", message.from);
 										strncpy (message.msg, "Вы не состоите ни в одной группе", sizeof(message.msg));
 										message.todo = FALSE;
-										//send(data->fds[i].fd, &message, sizeof(message), 0);
 										sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										mysql_free_result(res);
 										break;
@@ -380,7 +348,6 @@ void *poll_connection (void *args) {
 									else {
 										while( (row = mysql_fetch_row(res))) {
 											snprintf(message.msg, sizeof(message.msg), "%s", row[0]);
-											//send(data->fds[i].fd, &message, sizeof(message), 0);
 											sendall(data->fds[i].fd, (const char*)&message, sizeof(message));
 										}
 										message.todo = TRUE;
@@ -394,12 +361,10 @@ void *poll_connection (void *args) {
 											syslog(LOG_ERR,"recv error on sock %d\n", data->fds[i].fd);
 										if (Is_user_ingroup(mysql, message.from, message.msg) == FALSE) {
 											message.todo = FALSE;
-											//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 											sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 										}
 										else {
 											message.todo = TRUE;
-											//send(data->fds[i].fd, &message.todo, sizeof(message.todo), 0);
 											sendall(data->fds[i].fd, (const char*)&message.todo, sizeof(message.todo));
 											break;
 										}	
@@ -407,12 +372,10 @@ void *poll_connection (void *args) {
 									if (Delete_user_fromgroup(mysql, message.from, message.msg) == 0) {
 										syslog(LOG_INFO,"Пользоватеель %s вышел из группы %s\n",message.from, message.msg);
 										strncpy (message.msg, "Вы вышли из группы", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
 										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
 									}											
 									else {
 										strncpy (message.msg, "Ошибка выхода из группы", sizeof(message.msg));
-										//send(data->fds[i].fd, &message.msg, sizeof(message.msg), 0);
 										sendall(data->fds[i].fd, (const char*)&message.msg, sizeof(message.msg));
 									}	
 								break;
@@ -1147,7 +1110,6 @@ void *ask_for_delivered(void *msg) {
 		snprintf(message->from, sizeof(from), "%s", from);
 		sock = sock;
 		sendall(sock, (const char*)message, sizeof(msg_type));
-		//send(sock, &message, sizeof(message), 0);
 		if (Readable_timeo(sock, 5) == 0) 
 			fprintf(stderr, "socket timeout\n");
 			

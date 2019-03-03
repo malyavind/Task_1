@@ -416,7 +416,6 @@ int main(int argc, char **argv)
 				///if the group does not exist, it will be created
 				printf("Или введите название новой группы:\n");
 				message.todo = atoi(&slct); ;
-				//clean_stdin();
 				
 				fgets (message.msg, MSG_LEN, stdin);
 				if(sendall(sock, (const char*)&message, sizeof(message)) != sizeof(message)) {
